@@ -1,0 +1,8 @@
+# Name,   Type, SubType, Offset,  Size, Flags
+# ESP32-S3 KEY V1.0, 8 MB flash. The FAT filesystem lives on the external
+# microSD card (SDMMC), not on internal flash, so no dedicated "storage"
+# data partition is needed here - the factory app gets generous headroom
+# for the embedded web UI assets, WiFi, TinyUSB and FATFS/SDMMC code.
+nvs,      data, nvs,     0x9000,  0x6000,
+phy_init, data, phy,     0xf000,  0x1000,
+factory,  app,  factory, 0x10000, 4M,

@@ -1,0 +1,13 @@
+## IDF Component Manager Manifest File
+version: '0.2.0'
+dependencies:
+  espressif/esp_tinyusb:
+    version: "^1.7.6~1"
+    # Locally vendored + patched: upstream 1.7.6~2 still calls the old
+    # 4-arg esp_vfs_fat_register(), which was replaced by a 2-arg
+    # esp_vfs_fat_conf_t-based signature in ESP-IDF 6.0. See
+    # ../components/esp_tinyusb/tusb_msc_storage.c and CLAUDE.md.
+    override_path: "../components/esp_tinyusb"
+    rules:
+      - if: "idf_version >=5.0"
+  idf: ">=5.0"

@@ -1,0 +1,45 @@
+wireless-sewing
+Copyright 2026 Tobias Hecker
+
+This product includes software developed by Espressif Systems (Shanghai)
+CO LTD, licensed under the Apache License, Version 2.0. See the LICENSE
+file for the full license text.
+
+================================================================================
+
+main/ and spiffs/
+
+These files are derived from the "usb_msc_wireless_disk" example of
+esp-iot-solution:
+  https://github.com/espressif/esp-iot-solution/tree/master/examples/usb/device/usb_msc_wireless_disk
+Copyright Espressif Systems (Shanghai) CO LTD, licensed under the Apache
+License, Version 2.0. Original SPDX headers have been retained.
+
+Changes made to the original example (see CLAUDE.md for details):
+  - Adapted for the ESP32-S3 KEY V1.0 USB dongle, including SDMMC pinout
+    for an external microSD card (4-bit SDIO).
+  - Added an automatic USB "media changed" soft-reconnect, implemented by
+    briefly toggling the native USB-OTG VBUS-valid signal
+    (msc_notify_media_change()), so an embroidery machine picks up files
+    added or removed via the web interface without unplugging. Triggered
+    after upload/delete and exposed manually via GET /reset_msc.
+  - Updated esp_wifi_set_config() calls from the deprecated
+    ESP_IF_WIFI_AP/ESP_IF_WIFI_STA to WIFI_IF_AP/WIFI_IF_STA for
+    ESP-IDF 6.0.
+  - Adjusted FATFS/SD card and WiFi defaults (FAT32-focused configuration,
+    SoftAP SSID/password) for this project's use case.
+
+================================================================================
+
+components/esp_tinyusb/
+
+This is a vendored copy of espressif/esp_tinyusb 1.7.6~2:
+  https://github.com/espressif/idf-extra-components/tree/master/esp_tinyusb
+Copyright Espressif Systems (Shanghai) CO LTD, licensed under the Apache
+License, Version 2.0 (see components/esp_tinyusb/LICENSE).
+
+Changes made to the original component (see CLAUDE.md for details):
+  - Patched tusb_msc_storage.c (tinyusb_msc_storage_mount) to call the
+    ESP-IDF 6.0 esp_vfs_fat_register() API, which takes a single
+    esp_vfs_fat_conf_t struct instead of the previous separate
+    base_path/drv/max_files arguments.
