@@ -1,9 +1,11 @@
 # wireless-sewing — Bernina B 500 WiFi-USB-Stick
 
-WiFi-fähiger Ersatz für den USB-Stick einer Bernina B 500 Stickmaschine.
-Stickdateien werden über ein Webinterface (SoftAP) auf eine microSD-Karte
-hochgeladen/gelöscht; die Maschine sieht die Karte ganz normal als USB-MSC
-(Mass Storage). Basis ist das Espressif-Beispiel
+WiFi-fähiger Ersatz für den USB-Stick einer Bernina B 500 Stickmaschine. Der
+Stick verbindet sich mit dem Heimnetz (STA) und ist per mDNS unter
+`http://<devname>.local` erreichbar. Stickdateien werden über ein
+Webinterface auf eine microSD-Karte hochgeladen/gelöscht; die Maschine sieht
+die Karte ganz normal als USB-MSC (Mass Storage). Basis ist das
+Espressif-Beispiel
 [`usb_msc_wireless_disk`](https://github.com/espressif/esp-iot-solution/tree/master/examples/usb/device/usb_msc_wireless_disk)
 aus `esp-iot-solution`, angepasst auf die hier verwendete Hardware.
 
@@ -81,9 +83,15 @@ nach dem Flashen zu erwarten, sobald die MSC-Firmware läuft — siehe
   (`s_pdrv`) gehen — **keine** VFS-Indirektion auf dem USB-Pfad.
 - `main/app_http_server.c`: `esp_http_server`-Instanz, die **dieselbe**
   FAT-Partition über VFS (`fopen`/`fwrite`/`unlink` unter `/disk`) bedient —
-  Upload, Download, Liste, Delete, WiFi-Settings (`/settings.html`).
-- `main/app_wifi.c`: SoftAP + optional STA-Join, Konfiguration in NVS
-  persistiert, einstellbar über `/settings.html`.
+  Upload, Download, Liste, Delete.
+- `main/app_wifi.c`: reines STA-WLAN. `apply_sd_config()` liest beim Start
+  `/disk/config.txt` (falls vorhanden), überschreibt damit die in NVS
+  gespeicherten Werte `devname`/`stassid`/`stapasswd` und löscht die Datei
+  anschließend. Danach verbindet sich der Stick mit dem konfigurierten
+  Heimnetz; ist keine SSID hinterlegt, bleibt WLAN komplett aus und der
+  Stick läuft als reiner USB-Stick weiter. Bei erfolgreichem Connect wird
+  Hostname/mDNS auf `devname` (Default `bernina-stick`) gesetzt →
+  `http://<devname>.local`.
 - Gemeinsames Volume, zwei Schreibpfade (Web via VFS, USB-Host via raw
   Sektor-I/O) — siehe „Bernina-Spezifika" für die Synchronisierung.
 
@@ -128,12 +136,36 @@ nicht erneut, auch wenn der Webserver Dateien hinzufügt/löscht. Lösung in
   erhöhen.
 
 ### WiFi-Zugang
-- SoftAP-SSID: `Bernina-Stick`, Passwort: `stickmaschine` (Defaults in
-  `main/Kconfig.projbuild`, persistiert/änderbar via `/settings.html` und
-  NVS — vor Inbetriebnahme ggf. eigenes Passwort vergeben).
-- AP-IP: `192.168.4.1` (`SERVER_IP`).
-- Optional: STA-Join ins Heimnetz über `ESP_WIFI_ROUTE_SSID`/`_PASSWORD`
-  (leer = aus).
+Der Stick hat **keinen eigenen AP mehr** — er verbindet sich nur noch (STA)
+mit einem vorhandenen Heimnetz. Verbindungsdaten liegen in NVS
+(`stassid`/`stapasswd`/`devname`, Namespace `"memory"`) und werden beim Boot
+optional durch `/disk/config.txt` überschrieben (`apply_sd_config()` in
+`main/app_wifi.c`).
+
+- **`config.txt`** im Root der SD-Karte: je eine Zeile `Key=Value`, Keys
+  case-insensitive, Leerzeilen und `#`-Kommentare werden ignoriert,
+  Whitespace/`\r` (CRLF) getrimmt. Erkannte Keys:
+  ```
+  DeviceName=bernina-stick
+  SSID=FritzBox-Wohnung
+  Password=geheim123
+  ```
+  Vorhandene Werte überschreiben die NVS-Einstellungen **immer** — auch wenn
+  der Stick gerade noch mit den alten Daten verbunden ist. Fehlende Keys
+  lassen den jeweiligen NVS-Wert unangetastet. Die Datei wird danach **in
+  jedem Fall gelöscht** (auch bei leerem/unvollständigem Inhalt), damit das
+  WLAN-Passwort nicht auf der später als USB-Stick sichtbaren SD verbleibt;
+  das Passwort wird zudem nie geloggt.
+- **Erreichbarkeit:** `http://<devname>.local` per mDNS (neue Abhängigkeit
+  `espressif/mdns` in `main/idf_component.yml`). Ohne gesetzten `devname`
+  greift der Default `bernina-stick` (`DEFAULT_DEVICE_NAME` in
+  `app_wifi.c`), also `http://bernina-stick.local`.
+- **Kein konfiguriertes WLAN** (frischer Stick ohne `config.txt`, leeres
+  NVS): `stassid` ist leer → WLAN bleibt komplett aus, der Stick funktioniert
+  weiterhin als reiner USB-Stick (Webinterface/mDNS dann nicht erreichbar).
+- Optionaler Werks-Fallback über Kconfig (`idf.py menuconfig` → „USB MSC
+  Device Demo" → „WiFi Settings": `ESP_WIFI_ROUTE_SSID`/`_PASSWORD`, Default
+  leer = aus) — greift nur, solange NVS noch keine `stassid` enthält.
 
 ## Vendorte Komponenten (`components/esp_tinyusb`)
 
@@ -171,6 +203,12 @@ Kommentar im Code). `main/idf_component.yml` referenziert diese Kopie via
 - `tud_msc_inquiry_cb` liefert noch generische Vendor/Product-Strings
   (`"ESP"` / `"Mass Storage"`) — rein kosmetisch, kein funktionaler
   Blocker.
+- **Tote Kconfig-Symbole aus der SoftAP-Ära.** Seit dem Umbau auf
+  Datei-basierte STA-only-Konfiguration (`config.txt` + mDNS, siehe
+  „WiFi-Zugang") sind `ESP_WIFI_SOFTAP_SSID`, `ESP_WIFI_SOFTAP_PASSWORD`,
+  `ESP_WIFI_SOFTAP_MAX_STA`, `ESP_WIFI_AP_CHANNEL` und `SERVER_IP` in
+  `main/Kconfig.projbuild` funktional ungenutzt. Bewusst belassen (geringes
+  Risiko/Churn); könnten bei Gelegenheit entfernt werden.
 
 ## Debugging
 
@@ -187,13 +225,21 @@ Bernina/dem Host verbunden). Optionen für Laufzeit-Logs:
 2. Flashen via BOOT-Prozedur auf `/dev/cu.usbmodem1101`.
 3. Stick am Mac einstecken → `diskutil info diskN` zeigt `FAT32`; Datei
    kopieren/lesen funktioniert.
-4. Mit AP `Bernina-Stick` verbinden → `http://192.168.4.1` → Datei
-   hochladen → **ohne Abziehen** erscheint sie am Mac-Mount nach
-   ~`CONFIG_MSC_MEDIA_CHANGE_DELAY_MS` neu (Soft-Reconnect); Delete
-   spiegelt sich analog.
-5. Stick in die B 500 → vorhandene Stickdatei laden ✔; danach via Web neue
+4. `config.txt` mit `DeviceName`/`SSID`/`Password` (gültiges Heimnetz) im
+   Root der SD-Karte anlegen, Stick neu starten:
+   - `config.txt` ist nach dem Boot von der SD verschwunden.
+   - Stick joint das Heimnetz (im Router als `<DeviceName>` sichtbar).
+   - `http://<DeviceName>.local` öffnet die Datei-Liste/Upload-Seite.
+   - Im UART0-Log (`idf.py monitor`) erscheinen Connect-/IP-Meldungen, aber
+     **kein Passwort**.
+5. Datei über das Webinterface hochladen → **ohne Abziehen** erscheint sie
+   am Mac-Mount nach ~`CONFIG_MSC_MEDIA_CHANGE_DELAY_MS` neu
+   (Soft-Reconnect); Delete spiegelt sich analog.
+6. Stick in die B 500 → vorhandene Stickdatei laden ✔; danach via Web neue
    Datei hochladen → Maschine zeigt die neue Datei **ohne
    Abziehen/Wiedereinstecken**; Delete-Test analog.
    `CONFIG_MSC_MEDIA_CHANGE_DELAY_MS` ggf. an das Bernina-Verhalten
    anpassen.
-6. (Optional) UART0-Logs via USB-TTL-Adapter + `idf.py monitor`.
+7. Ohne `config.txt` neu booten → Stick verbindet sich mit den zuvor in NVS
+   gespeicherten Daten; `http://<devname>.local` bleibt erreichbar.
+8. (Optional) UART0-Logs via USB-TTL-Adapter + `idf.py monitor`.

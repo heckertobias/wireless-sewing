@@ -1,6 +1,10 @@
 ## IDF Component Manager Manifest File
 version: '0.2.0'
 dependencies:
+  espressif/mdns:
+    version: "*"
+    rules:
+      - if: "idf_version >=5.0"
   espressif/esp_tinyusb:
     version: "^1.7.6~1"
     # Locally vendored + patched: upstream 1.7.6~2 still calls the old

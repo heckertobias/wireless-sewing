@@ -6,9 +6,10 @@ built on an ESP32-S3.
 ## What it does
 
 Embroidery files are uploaded and deleted through a small web interface
-served from a SoftAP, and stored on a microSD card. The embroidery machine
-sees that same microSD card as a regular USB mass-storage device (USB MSC) —
-no extra drivers, no special software on the machine side.
+served by the device over your home WiFi, and stored on a microSD card. The
+embroidery machine sees that same microSD card as a regular USB
+mass-storage device (USB MSC) — no extra drivers, no special software on
+the machine side.
 
 When a file is added or removed via the web interface, the device briefly
 toggles its USB connection ("media changed") so the machine re-reads the
@@ -50,12 +51,40 @@ idf.py -p /dev/cu.usbmodem1101 flash
 
 ## Usage
 
-1. Connect to the device's WiFi access point `Bernina-Stick`
-   (default password `stickmaschine` — change this via the web UI before
-   real use).
-2. Open `http://192.168.4.1` in a browser to upload, list, and delete
-   embroidery files on the microSD card.
-3. Plug the device into the Bernina B 500 like a regular USB stick.
+### First-time WiFi setup
+
+1. On your computer, create a plain text file named `config.txt` in the
+   root of the microSD card with your home WiFi details:
+
+   ```
+   DeviceName=bernina-stick
+   SSID=YourWiFiName
+   Password=YourWiFiPassword
+   ```
+
+   - `DeviceName` is optional (defaults to `bernina-stick`) and sets the
+     address you'll use to reach the device.
+   - All three lines are optional — any value you leave out keeps its
+     previous setting.
+
+2. Insert the SD card into the device and power it on (e.g. by plugging it
+   into a USB port/charger). On first boot, the device reads `config.txt`,
+   applies the settings, and **deletes the file** again — so the WiFi
+   password doesn't stay readable on the card once it's used as a USB
+   stick.
+
+3. The device joins your WiFi network. Open `http://<DeviceName>.local`
+   (e.g. `http://bernina-stick.local`) in a browser to upload, list, and
+   delete embroidery files on the microSD card.
+
+4. Plug the device into the Bernina B 500 like a regular USB stick.
+
+To change the WiFi network or device name later, just create a new
+`config.txt` with the updated values and reboot the device — the new
+settings always override the old ones, even if it's already connected.
+
+If no WiFi is configured (no `config.txt` was ever applied), the device
+simply works as a plain USB stick — the web interface won't be reachable.
 
 See [`CLAUDE.md`](CLAUDE.md) for full architecture, hardware, and
 development details.

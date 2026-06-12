@@ -427,19 +427,6 @@ static esp_err_t upload_page_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* Handler to respond with an upload page embedded in flash.
- * Browsers expect to GET website page at URI /settings.html.
- * This can be overridden by uploading file with same name */
-static esp_err_t settings_page_get_handler(httpd_req_t *req)
-{
-    extern const unsigned char settings_html_start[] asm("_binary_settings_html_start");
-    extern const unsigned char settings_html_end[]   asm("_binary_settings_html_end");
-    const size_t settings_html_size = (settings_html_end - settings_html_start);
-    httpd_resp_set_type(req, "text/html");
-    httpd_resp_send(req, (const char *)settings_html_start, settings_html_size);
-    return ESP_OK;
-}
-
 /* Send HTTP response with a run-time generated html consisting of
  * a list of all files and folders under the requested path.
  * In case of SPIFFS this returns empty list when path is any
@@ -481,12 +468,14 @@ static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath)
     uint32_t file_num_count = 0;
     uint32_t dir_num_count = 0;
     while ((entry = readdir(dir)) != NULL) {
+        /* Skip hidden entries (dotfiles, macOS metadata like ._*, .Spotlight-V100,
+         * .fseventsd, .Trashes). This also covers "." and ".." . */
+        if (entry->d_name[0] == '.') {
+            continue;
+        }
+
         entrytype = (entry->d_type == DT_DIR ? "directory" : "file");
         if (entry->d_type == DT_DIR) {
-            /* Skip the current and parent directory entries */
-            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-                continue;
-            }
             dir_num_count++;
         } else {
             file_num_count++;
@@ -623,8 +612,6 @@ static esp_err_t download_get_handler(httpd_req_t *req)
             return index_html_get_handler(req);
         } else if (strcmp(filename, "/favicon.ico") == 0) {
             return favicon_get_handler(req);
-        } else if (strcmp(filename, "/settings.html") == 0) {
-            return settings_page_get_handler(req);
         } else if (strcmp(filename, "/upload.html") == 0) {
             return upload_page_get_handler(req);
         } else if (strcmp(filename, "/styles.css") == 0) {
@@ -973,48 +960,6 @@ static esp_err_t delete_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-extern esp_err_t app_wifi_set_wifi(char * mode, char *ap_ssid, char *ap_passwd, char *sta_ssid, char *sta_passwd);
-
-/* Handler to set a setting from the server */
-static esp_err_t setting_get_handler(httpd_req_t *req)
-{
-    char query[160];
-    char mode[16], ap_ssid[32], ap_passwd[32], sta_ssid[32], sta_passwd[32];
-
-    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
-        ESP_LOGI(TAG, "Query: %s", query);
-
-        if (httpd_query_key_value(query, "wifimode", mode, sizeof(mode)) == ESP_OK) {
-            ESP_LOGI(TAG, "WIFI Mode: %s", mode);
-        }
-
-        if (httpd_query_key_value(query, "apssid", ap_ssid, sizeof(ap_ssid)) == ESP_OK) {
-            ESP_LOGI(TAG, "AP SSID: %s", ap_ssid);
-        }
-
-        if (httpd_query_key_value(query, "appassword", ap_passwd, sizeof(ap_passwd)) == ESP_OK) {
-            ESP_LOGI(TAG, "AP password: %s", ap_passwd);
-        }
-
-        if (httpd_query_key_value(query, "stassid", sta_ssid, sizeof(sta_ssid)) == ESP_OK) {
-            ESP_LOGI(TAG, "STA SSID: %s", sta_ssid);
-        }
-
-        if (httpd_query_key_value(query, "stapassword", sta_passwd, sizeof(sta_passwd)) == ESP_OK) {
-            ESP_LOGI(TAG, "STA password: %s", sta_passwd);
-        }
-
-        app_wifi_set_wifi(mode, ap_ssid, ap_passwd, sta_ssid, sta_passwd);
-    } else {
-        return settings_page_get_handler(req);
-    }
-
-    httpd_resp_send(req, "Settings updated! Please reconnect!", HTTPD_RESP_USE_STRLEN);
-    // Reset to configured wifi mode
-    esp_restart();
-    return ESP_OK;
-}
-
 static esp_err_t reset_msc_get_handler(httpd_req_t *req)
 {
     usbd_vbus_enable(false);
@@ -1134,15 +1079,6 @@ esp_err_t start_file_server(const char *base_path)
         ESP_LOGE(TAG, "Failed to start file server!");
         return ESP_FAIL;
     }
-
-    /* URI handler for set a setting from server */
-    httpd_uri_t setting = {
-        .uri       = "/settings.html*",   // Match all URIs of type /delete/path/to/file
-        .method    = HTTP_GET,
-        .handler   = setting_get_handler,
-        .user_ctx  = server_data    // Pass server data as context
-    };
-    httpd_register_uri_handler(server, &setting);
 
     /* URI handler for reset_msc */
     httpd_uri_t reset_msc = {
